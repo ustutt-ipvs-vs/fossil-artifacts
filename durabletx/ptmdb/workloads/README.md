@@ -1,0 +1,2 @@
+This folder is used to keep the generated YCSB workload files, with the operations to load and run.
+

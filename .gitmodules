@@ -1,0 +1,3 @@
+[submodule "durabletx"]
+	path = durabletx
+	url = https://github.com/pramalhe/durabletx

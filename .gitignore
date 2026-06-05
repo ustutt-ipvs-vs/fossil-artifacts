@@ -1,0 +1,6 @@
+.direnv/
+build/
+.cache/
+/compile_commands.json
+*.pyc
+fossil_persistence_*

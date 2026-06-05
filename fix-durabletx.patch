@@ -1,0 +1,125 @@
+diff --git a/ptmdb/TMBTreeMap.hpp b/ptmdb/TMBTreeMap.hpp
+index fad793b..8e33580 100644
+--- a/ptmdb/TMBTreeMap.hpp
++++ b/ptmdb/TMBTreeMap.hpp
+@@ -71,11 +71,11 @@ public: explicit TMBTreeMap(std::int32_t degree=8) :
+ 	clear();
+ }
+ 
+-~TMBTreeMap() {
+-	if (root == nullptr) return;
+-	Node* first = seekFirst(root);
+-	deleteAll(first);
+-}
++~TMBTreeMap() noexcept(false) {
++	if (root == nullptr) return;
++	Node* first = seekFirst(root);
++	deleteAll(first);
++}
+ 
+ 
+ /*---- Methods ----*/
+@@ -177,9 +177,9 @@ public: Node(std::uint32_t maxKeys, bool leaf, Node* parent) {
+ 	this->parent.pstore(parent);
+ }
+ 
+-public: ~Node() {
+-    //printf("Destroying Node = %p with length=%d\n", this, length.pload());
+-}
++public: ~Node() noexcept(false) {
++    //printf("Destroying Node = %p with length=%d\n", this, length.pload());
++}
+ 
+ /*-- Methods for getting info --*/
+ 
+diff --git a/ptmdb/otherdb/redodb/TMHashMap.hpp b/ptmdb/otherdb/redodb/TMHashMap.hpp
+index 04a7856..1d1254f 100644
+--- a/ptmdb/otherdb/redodb/TMHashMap.hpp
++++ b/ptmdb/otherdb/redodb/TMHashMap.hpp
+@@ -122,7 +122,7 @@ public:
+                 } else {
+                     prev->next = newnode;
+                 }
+-                //sizeHM++;
++                sizeHM++;
+                 return true;  // New insertion
+             }
+             if (node->key == key) {
+@@ -153,7 +153,7 @@ public:
+                 } else {
+                     prev->next = node->next;
+                 }
+-                //sizeHM--;
++                sizeHM--;
+                 PTM_DELETE(node);
+                 return true;
+             }
+diff --git a/ptmdb/slice.h b/ptmdb/slice.h
+index 68b05e6..c5e7cfc 100644
+--- a/ptmdb/slice.h
++++ b/ptmdb/slice.h
+@@ -183,7 +183,7 @@ public:
+ #endif
+     }
+ 
+-    ~PSlice() {
++    ~PSlice() noexcept(false) {
+         PTM_FREE(data_.pload());
+     }
+ 
+@@ -281,7 +281,7 @@ class PBTSlice {
+ public:
+     PBTSlice() { }
+ 
+-    ~PBTSlice() {
++    ~PBTSlice() noexcept(false) {
+         //printf("PBTSlice destructor of size=%d\n", size_.pload());
+         if (size_ != 0) {
+             PTM_FREE(data_.pload());
+@@ -293,17 +293,14 @@ public:
+     void operator=(const Slice& sl) {
+         //printf("PBTSlice assignment of const Slice\n");
+         int32_t size = sl.size();
+-        char* addr = data_;
+-        // If different size, delete the old string and make a new one, otherwise re-use
+-        if (size != size_) {
+-            //printf("PBTSlice %d != %d => deleting old data\n", size, size_.pload());
+-            // Delete the old data (if there was something)
+-            if (size_ != 0) PTM_FREE(data_.pload());
+-            addr = (char*)PTM_MALLOC(size+1);
+-            data_ = addr;
+-            size_ = size;
+-        }
+-        PTM_MEMCPY(addr, sl.data(), size+1);
++        // Replacing in place would bypass TL2's persist<T> write tracking because
++        // the payload buffer is raw bytes. Publish a new buffer instead.
++        if (size_ != 0) PTM_FREE(data_.pload());
++        char* addr = (char*)PTM_MALLOC(size+1);
++        PTM_MEMCPY(addr, sl.data(), size);
++        addr[size] = 0;
++        data_ = addr;
++        size_ = size;
+     }
+ 
+     // Assignment operator from a PBTSlice does NOT delete the old data
+@@ -325,7 +322,19 @@ public:
+     }
+ 
+     inline int compare(const Slice& other) {
+-        return PTM_STRCMP(data_.pload(), other.data(), size_.pload());
++        const auto this_size = static_cast<size_t>(size_.pload());
++        const auto other_size = other.size();
++        const auto min_len = this_size < other_size ? this_size : other_size;
++
++        int r = 0;
++        if (min_len != 0) {
++            r = PTM_MEMCMP(data_.pload(), other.data(), min_len);
++        }
++        if (r == 0) {
++            if (this_size < other_size) r = -1;
++            else if (this_size > other_size) r = +1;
++        }
++        return r;
+     }
+ 
+ private:
